@@ -89,3 +89,21 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// Return the year Unix Version 6 was released.
+int
+sys_getyear(void)
+{
+  return 1975;
+}
+
+// Print a simple process table: PID  state  name
+extern void procdump(void);   // forward-declare the helper
+
+int
+sys_ps(void)
+{
+  procdump();   // prints PID, state, name for every process
+  return 0;
+}
+

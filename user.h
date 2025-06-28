@@ -23,6 +23,9 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+int getyear(void);              // user-wrapper for SYS_getyear
+int getyear(void);
+int ps(void);
 
 // ulib.c
 int stat(const char*, struct stat*);
