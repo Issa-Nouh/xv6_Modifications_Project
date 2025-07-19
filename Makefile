@@ -185,7 +185,9 @@ UPROGS=\
 	_wc\
 	_zombie\
 	_getyear\
-	_ps
+	_ps\
+	_touch\
+	_find
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
 
