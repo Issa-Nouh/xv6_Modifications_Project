@@ -174,6 +174,51 @@ growproc(int n)
   return 0;
 }
 
+
+// Create a kernel thread that shares the caller's address space.
+int
+clone(void (*fcn)(void*), void *arg, void *stack)
+{
+  struct proc *np;
+  struct proc *cur = myproc();
+  uint sp;
+
+  // Simple sanity checks
+  if(!stack || ((uint)stack % PGSIZE) != 0)
+    return -1;
+
+  // Allocate a slot in the process table
+  if((np = allocproc()) == 0)
+    return -1;
+
+  // ***** Share everything the way threads do *****
+  np->pgdir = cur->pgdir;     // same page table
+  np->sz    = cur->sz;        // same size
+  np->parent = cur;
+
+  // Share open files and cwd
+  for(int i = 0; i < NOFILE; i++)
+    if(cur->ofile[i])
+      np->ofile[i] = filedup(cur->ofile[i]);
+  np->cwd = idup(cur->cwd);
+
+  // Copy trap frame, then tweak it
+  *np->tf = *cur->tf;
+
+  // Build a tiny user stack: [ FAKE-RET | arg ]
+  sp = (uint)stack + PGSIZE;
+  sp -= 4;  *(uint*)sp = (uint)arg;         // push arg
+  sp -= 4;  *(uint*)sp = 0xFFFFFFFF;        // fake return address
+
+  np->tf->eip = (uint)fcn;   // where the thread starts
+  np->tf->esp = sp;
+  np->tf->ebp = sp;
+
+  safestrcpy(np->name, cur->name, sizeof(np->name));
+  np->state = RUNNABLE;
+  return np->pid;
+}
+
 // Create a new process copying p as the parent.
 // Sets up stack to return as if from system call.
 // Caller must set state of returned proc to RUNNABLE.

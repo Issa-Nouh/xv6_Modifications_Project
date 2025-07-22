@@ -187,7 +187,8 @@ UPROGS=\
 	_getyear\
 	_ps\
 	_touch\
-	_find
+	_find\
+	_clonetest
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
 
