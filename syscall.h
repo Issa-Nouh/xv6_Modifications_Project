@@ -22,3 +22,5 @@
 #define SYS_close  21
 #define SYS_getyear 22        // next free number
 #define SYS_ps 23
+#define SYS_clone 24
+#define SYS_join 25
