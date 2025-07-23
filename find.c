@@ -59,7 +59,7 @@ void find(char *path, char *target) {
         // Handle directory entries
         if(st.type == T_DIR) {
             // Skip "." and ".." to prevent infinite recursion
-            if(strcmp(de.name, ".") && strcmp(de.name, "..")) {
+            if(strcmp(de.name, ".") && strcmp(de.name, "..")) { //returns 0 if strings are equal
                 find(buf, target);  // Recursive call
             }
         } 
