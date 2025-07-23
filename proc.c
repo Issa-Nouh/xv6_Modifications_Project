@@ -328,40 +328,73 @@ freeproc(struct proc *p)
 }
 
 
-// Wait for a child *thread* (same pgdir) to exit and reap it.
-// Returns child's pid, or -1 if no children, or -2 if have children
-// but they are all still running.
+// Wait for ANY *thread* that shares the *same* address space (pgdir)    //
+// with the current process to finish (state == ZOMBIE).                 //
+// When one finishes, clean up its resources (“reap” it) and             //
+// return its PID.                                                       //
+// Return values:                                                        //
+//   •  child's  PID  – success: a thread was reaped                     //
+//   • −1           – failure: no runnable / zombie children remain
 int
 join(void)
 {
-  struct proc *p;
-  int havekids, pid;
-  struct proc *cur = myproc();
+  struct proc *p; // iterator over the process table
+  int havekids, pid; // flags / result storage
+  struct proc *cur = myproc(); // pointer to the *current* process
 
+  // ── 1. ENTER CRITICAL SECTION ──────────────────────────────────────
+  // Take the ptable lock once and keep it for the whole loop.
+  // This prevents race conditions in the process table. 
+  //Two CPUs run join() for the same parent at the same time. 
+  //Both notice the same ZOMBIE child and both try to free it.
   acquire(&ptable.lock);          // hold once
   for(;;){
     havekids = 0;
+
+    // Walk over every entry in the global process table.
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      // Skip anything that is *not*
+      //  • a child of the current process        (p->parent == cur)
+      //  • *and* in the *same* page directory    (p->pgdir == cur->pgdir)
+      //        → ensures we are only looking at “threads”
       if(p->parent != cur || p->pgdir != cur->pgdir)
         continue;
-      havekids = 1;
+      havekids = 1;// We found at least one matching child/thread
+      // ── 2a. If that thread has exited (state == ZOMBIE) ────────────
       if(p->state == ZOMBIE){
         // --- reap the finished thread ---
+        // Grab its pid *before* we dismantle the struct.
         pid = p->pid;
+        // Free the kernel stack associated with the dead thread.
         kfree(p->kstack);
         p->kstack = 0;
         /* inline reset (or call freeproc) */
+        // Reset the struct to UNUSED and unlink it from parent etc.
+        // (freeproc() zeroes most fields and sets state = UNUSED.)
         freeproc(p);
+        // We are done with shared data → release the lock *before* returning.
         release(&ptable.lock);
         return pid;
       }
     }
+    
 
+    // ── 3. No ZOMBIE children found this pass ────────────────────────
+    // Two ways to break out now:
+    //   (a) *havekids == 0* → we never saw any matching children
+    //   (b) current process has been killed → abort waiting
     if(!havekids || cur->killed){
       release(&ptable.lock);
       return -1;                 // no threads left
     }
 
+    // ── 4. Still have living children → go to sleep until a change ───
+    // sleep() atomically:
+    //   • sets cur->state = SLEEPING
+    //   • releases ptable.lock
+    //   • context-switches away
+    // When the sleeping process is woken, sleep() reacquires ptable.lock
+    // *before* returning, so we re-enter the loop with the lock held.
     sleep(cur, &ptable.lock);    // sleeps *with* the lock held
   }
 }
@@ -617,14 +650,27 @@ procdump(void)
   char *state;
   uint pc[10];
 
+  // Iterate over the global process table(an array of PCBs) `ptable.proc[0..NPROC-1]`
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    // Skip entries that have never been used
     if(p->state == UNUSED)
       continue;
+    // 1) Check the numeric state is within the range of our `states[]` array
+    // 2) Check that the entry in `states[]` is not NULL
+    // If both pass, use that string; otherwise fall back to "???"
     if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
       state = states[p->state];
     else
       state = "???";
     cprintf("%d %s %s", p->pid, state, p->name);
+
+    //For sleeping processes, we call getcallerpcs to capture up to 10 saved return addresses 
+    //(the “pc” or program‐counter values) from the kernel stack. 
+    //We then print each address in hex, which helps the developer see where in 
+    //the kernel the process went to sleep.
+    //If process A calls function B, and B calls function C, and C calls sleep, 
+    //the single return address tells you only “C did it.” 
+    //You still don’t know how you ended up in C.
     if(p->state == SLEEPING){
       getcallerpcs((uint*)p->context->ebp+2, pc);
       for(i=0; i<10 && pc[i] != 0; i++)
