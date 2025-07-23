@@ -215,7 +215,9 @@ clone(void (*fcn)(void*), void *arg, void *stack)
   np->tf->ebp = sp;
 
   safestrcpy(np->name, cur->name, sizeof(np->name));
+  acquire(&ptable.lock);
   np->state = RUNNABLE;
+  release(&ptable.lock);
   return np->pid;
 }
 
@@ -311,6 +313,60 @@ exit(void)
   sched();
   panic("zombie exit");
 }
+
+// Release a proc table slot after the thread's stack and other
+// private resources have been freed.  Do *not* free pgdir here
+// because threads share it with the parent.
+static void
+freeproc(struct proc *p)
+{
+  p->pid     = 0;
+  p->parent  = 0;
+  p->name[0] = 0;
+  p->killed  = 0;
+  p->state   = UNUSED;
+}
+
+
+// Wait for a child *thread* (same pgdir) to exit and reap it.
+// Returns child's pid, or -1 if no children, or -2 if have children
+// but they are all still running.
+int
+join(void)
+{
+  struct proc *p;
+  int havekids, pid;
+  struct proc *cur = myproc();
+
+  acquire(&ptable.lock);          // hold once
+  for(;;){
+    havekids = 0;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->parent != cur || p->pgdir != cur->pgdir)
+        continue;
+      havekids = 1;
+      if(p->state == ZOMBIE){
+        // --- reap the finished thread ---
+        pid = p->pid;
+        kfree(p->kstack);
+        p->kstack = 0;
+        /* inline reset (or call freeproc) */
+        freeproc(p);
+        release(&ptable.lock);
+        return pid;
+      }
+    }
+
+    if(!havekids || cur->killed){
+      release(&ptable.lock);
+      return -1;                 // no threads left
+    }
+
+    sleep(cur, &ptable.lock);    // sleeps *with* the lock held
+  }
+}
+
+
 
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.

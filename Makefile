@@ -188,7 +188,8 @@ UPROGS=\
 	_ps\
 	_touch\
 	_find\
-	_clonetest
+	_clonetest\
+	_threadtest
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
 

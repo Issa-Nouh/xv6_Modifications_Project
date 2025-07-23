@@ -27,6 +27,7 @@ int getyear(void);              // user-wrapper for SYS_getyear
 int getyear(void);
 int ps(void);
 int clone(void (*fcn)(void*), void *arg, void *stack);
+int join(void);
 
 // ulib.c
 int stat(const char*, struct stat*);
